@@ -320,7 +320,7 @@ elem_t k_seq(BigFile *file, uint64_t k) {
     return kth;
 }
 
-elem_t *getPivots(BigFile *file, size_t mu) { //returns shit
+elem_t *getPivots(BigFile *file, size_t mu) {
     printf("Finding %d pivots", mu);
     elem_t *pivots = (elem_t *) malloc(mu * elemSize);
     size_t a = sqrt(m) / 4;
@@ -423,11 +423,11 @@ void run_sort(const char* inputName, const char* resultName) {
 }
 
 int main(int argc, char *argv[]) {
-    TEMP_PATH = "/media/lg/temp/";
-//    TEMP_PATH = argv[3];
+//    TEMP_PATH = "/media/lg/temp/";
+    TEMP_PATH = argv[3];
 //    writeFile("/media/lg/input.bin", 1e9);
-//    run_sort(argv[1], argv[2]);
-    run_sort("/media/lg/input.bin", "/media/lg/result.bin");
+    run_sort(argv[1], argv[2]);
+//    run_sort("/media/lg/input.bin", "/media/lg/result.bin");
 //    run_sort("input.bin", "/media/lg/result.bin");
 
     return 0;
