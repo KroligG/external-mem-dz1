@@ -208,7 +208,7 @@ BigFile *buildU(BigFile *file, size_t a) {
     return U;
 }
 
-BigFile **partition(BigFile *file, elem_t *pivots, size_t pivots_count) {
+BigFile **partition(BigFile *file, elem_t *pivots, size_t pivots_count, bool removePivots) {
     size_t block_count = pivots_count + 1;
     BigFile **files = (BigFile **) malloc(block_count * sizeof(BigFile *));
     for (size_t j = 0; j < block_count; j++) {
@@ -227,6 +227,9 @@ BigFile **partition(BigFile *file, elem_t *pivots, size_t pivots_count) {
                 break;
             }
             if(e == pivots[j]) {
+                if(removePivots) {
+                    break;
+                }
                 int swtch = pivotEqualitySwitches[j];
                 files[j + swtch]->write(e);
                 pivotEqualitySwitches[j] = swtch == 0 ? 1 : 0;
@@ -270,9 +273,9 @@ elem_t median_of_medians(BigFile *file) {
 }
 
 elem_t k_seq(BigFile *file, uint64_t k) {
-    elem_t median = median_of_medians(file); //does not return median
+    elem_t median = median_of_medians(file);
     elem_t pivot[] = {median};
-    BigFile **files = partition(file, pivot, 1);
+    BigFile **files = partition(file, pivot, 1, true);
     BigFile *leftFile = files[0];
     BigFile *rightFile = files[1];
     free(files);
@@ -326,9 +329,9 @@ elem_t *getPivots(BigFile *file, size_t mu) { //returns shit
     if (a == 0) a = 1;
     BigFile *U = buildU(file, a);
     uint64_t N = U->get_N();
-    uint64_t step = N / mu;
+    uint64_t step = N / (mu + 1);
     for (size_t i = 1; i <= mu; i++) {
-        pivots[i] = k_seq(U, i * step);
+        pivots[i - 1] = k_seq(U, i * step);
     }
     file->addAccumuatedIoTime(U->getTotalIoTime());
     delete U;
@@ -369,7 +372,7 @@ BigFile *distribution_sort(BigFile *file, BigFile *result) {
         size_t mu = sqrt(m);
         if (mu == 0) mu = 1;
         elem_t *pivots = getPivots(file, mu);
-        BigFile **files = partition(file, pivots, mu);
+        BigFile **files = partition(file, pivots, mu, false);
         for (size_t i = 0; i <= mu; i++) {
             BigFile *temp = distribution_sort(files[i], NULL);
             file->addAccumuatedIoTime(files[i]->getTotalIoTime());
@@ -393,7 +396,8 @@ void writeFile(const char *filename, uint64_t length) {
     srand(100500);
     for (uint64_t i = 0; i < length; i++) {
 //        file->write((elem_t) rand());
-        file->write((elem_t) (length - i));
+//        file->write((elem_t) (length - i));
+        file->write((elem_t) rand() % length);
     }
     file->finishWrite();
     delete file;
@@ -419,13 +423,10 @@ void test() {
     file.printFile(0);
 }
 
-
-int main(int argc, char *argv[]) {
+void run_sort(const char* inputName, const char* resultName) {
 //    BigFile* file = new BigFile(argv[1], false);
 //    BigFile* result = new BigFile(argv[2], false);
 //    distribution_sort(file, result);
-    writeFile("input.bin", 102);
-//    test();
     BigFile *file = new BigFile("input.bin", false);
     BigFile *result = new BigFile("result.bin", false);
 
@@ -438,5 +439,11 @@ int main(int argc, char *argv[]) {
     file->printFile(0);
     result->printFile(0);
     printf("Total time:%f, IO: %f (%f%%)\n", allTime, ioTime, percentIO);
+}
+
+int main(int argc, char *argv[]) {
+    writeFile("input.bin", 102);
+    run_sort(argv[1], argv[2]);
+
     return 0;
 }
