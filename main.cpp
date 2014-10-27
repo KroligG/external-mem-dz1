@@ -217,13 +217,19 @@ BigFile **partition(BigFile *file, elem_t *pivots, size_t pivots_count) {
     }
     uint64_t N = file->get_N();
     file->startRead();
-    int gfdg = 0;
+    int *pivotEqualitySwitches = (int *) malloc(pivots_count * sizeof(int));
+    memset(pivotEqualitySwitches, 0 , pivots_count * sizeof(int));
     for (uint64_t i = 0; i < N; i++) {
         elem_t e = file->read();
         for (size_t j = 0; j < block_count; j++) {
             if (j == pivots_count || e < pivots[j]) {
-                cout << e << " -> [" << j << "] " << ++gfdg << endl;
-                files[j]->write(e); //TODO improve logic for e == pivot
+                files[j]->write(e);
+                break;
+            }
+            if(e == pivots[j]) {
+                int swtch = pivotEqualitySwitches[j];
+                files[j + swtch]->write(e);
+                pivotEqualitySwitches[j] = swtch == 0 ? 1 : 0;
                 break;
             }
         }
