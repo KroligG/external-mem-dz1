@@ -193,34 +193,18 @@ long BigFile::tempfileCounter = 0;
 
 BigFile *buildU(BigFile *file, size_t a) {
     BigFile *U = BigFile::getTempFile();
-    elem_t *read_buf = (elem_t *) malloc(M_BYTES);
-    elem_t *write_buf = (elem_t *) malloc(B_BYTES);
     uint64_t n = file->get_n();
+    elem_t *m_buf = (elem_t *) malloc(M_BYTES);
+    U->startWrite(0);
     for (uint64_t j = 0; j <= n; j += m) {
-        size_t read_count = 0;
-        for (size_t i = 0; i < m; i++) {
-            size_t read = file->readB(read_buf + read_count, j + i);
-            if (read == 0) {
-                break;
-            }
-            read_count += read;
-        }
-
-        size_t write_buf_size = 0;
-        uint64_t blocks_written = 0;
-        for (size_t i = a - 1; i < read_count; i += a) {
-            write_buf[write_buf_size++] = read_buf[i];
-            if (write_buf_size == B) {
-                U->writeB(write_buf, write_buf_size, blocks_written++);
-                write_buf_size = 0;
-            }
-        }
-        if (write_buf_size > 0) {
-            U->writeB(write_buf, write_buf_size, blocks_written);
+        uint64_t read_elems = file->readMore(m_buf, j, m);
+        sort(m_buf, m_buf + read_elems);
+        for (uint64_t i = a - 1; i < read_elems; i += a) {
+            U->write(m_buf[i]);
         }
     }
-    free(read_buf);
-    free(write_buf);
+    U->finishWrite();
+    free(m_buf);
     return U;
 }
 
@@ -231,13 +215,14 @@ BigFile **partition(BigFile *file, elem_t *pivots, size_t pivots_count) {
         files[j] = BigFile::getTempFile();
         files[j]->startWrite(0);
     }
-    elem_t *buffers = (elem_t *) malloc(B_BYTES * block_count);
     uint64_t N = file->get_N();
     file->startRead();
+    int gfdg = 0;
     for (uint64_t i = 0; i < N; i++) {
         elem_t e = file->read();
         for (size_t j = 0; j < block_count; j++) {
             if (j == pivots_count || e < pivots[j]) {
+                cout << e << " -> [" << j << "] " << ++gfdg << endl;
                 files[j]->write(e); //TODO improve logic for e == pivot
                 break;
             }
@@ -247,7 +232,6 @@ BigFile **partition(BigFile *file, elem_t *pivots, size_t pivots_count) {
     for (size_t j = 0; j < block_count; j++) {
         files[j]->finishWrite();
     }
-    free(buffers);
     return files;
 }
 
@@ -280,7 +264,7 @@ elem_t median_of_medians(BigFile *file) {
 }
 
 elem_t k_seq(BigFile *file, uint64_t k) {
-    elem_t median = median_of_medians(file);
+    elem_t median = median_of_medians(file); //does not return median
     elem_t pivot[] = {median};
     BigFile **files = partition(file, pivot, 1);
     BigFile *leftFile = files[0];
@@ -330,7 +314,7 @@ elem_t k_seq(BigFile *file, uint64_t k) {
     return kth;
 }
 
-elem_t *getPivots(BigFile *file, size_t mu) {
+elem_t *getPivots(BigFile *file, size_t mu) { //returns shit
     elem_t *pivots = (elem_t *) malloc(mu * elemSize);
     size_t a = sqrt(m) / 4;
     if (a == 0) a = 1;
