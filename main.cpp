@@ -5,16 +5,17 @@
 
 using namespace std;
 
-typedef unsigned short elem_t;
+typedef long long elem_t;
 const size_t elemSize = sizeof(elem_t);
-const size_t B = 10;
+const size_t B = 1000000;
 const size_t B_BYTES = B * elemSize;
-//const size_t M = M_BYTES / elemSize;
-//const size_t M_BYTES = 1 * 1024 * 1024 * 1024; //1GB
-//const size_t m = M / B;
-const size_t m = 5;
-const size_t M = m * B;
-const size_t M_BYTES = M * elemSize;
+const size_t M_BYTES = 1 * 1024 * 1024 * 1024; //1GB
+const size_t M = M_BYTES / elemSize;
+const size_t m = M / B;
+const char* TEMP_PATH;
+//const size_t m = 5;
+//const size_t M = m * B;
+//const size_t M_BYTES = M * elemSize;
 
 
 namespace util {
@@ -31,7 +32,7 @@ public:
     static BigFile *getTempFile() {
         string name;
         stringstream strstream;
-        strstream << "temp_" << tempfileCounter;
+        strstream << TEMP_PATH << "temp_" << tempfileCounter;
         strstream << ".bin";
         strstream >> name;
         tempfileCounter++;
@@ -40,7 +41,7 @@ public:
 
     BigFile(string name, bool isTemp) : filename(name), isTemp(isTemp) {
         bool exists = false;
-        if (FILE *test = fopen(filename.data(), "r")) {
+        if (FILE *test = fopen64(filename.data(), "r")) {
             fclose(test);
             exists = true;
         }
@@ -62,7 +63,7 @@ public:
         double startTime = util::getTime();
         fseeko64(file, pos * B_BYTES, SEEK_SET);
         fwrite(ptr, 1, size * elemSize, file);
-        ioTime += util::getTime() - startTime;
+        ioTime += (util::getTime() - startTime);
     }
 
     void startWrite(uint64_t pos) {
@@ -111,7 +112,7 @@ public:
         double startTime = util::getTime();
         fseeko64(file, pos * B_BYTES, SEEK_SET);
         size_t readCount = fread(ptr, elemSize, B, file);
-        ioTime += util::getTime() - startTime;
+        ioTime += (util::getTime() - startTime);
         return readCount;
     }
 
@@ -144,23 +145,14 @@ public:
     }
 
     void printFile(size_t maxItems) {
-        elem_t *b = (elem_t *) malloc(B_BYTES);
-        uint64_t blockCount = get_n();
-        size_t counter = 0;
+        startRead();
+        size_t readTo = (size_t) (maxItems ? maxItems : get_N());
         printf("[");
-        for (uint64_t i = 0; i < blockCount; i++) {
-            size_t readCount = readB(b, i);
-            for (size_t j = 0; j < readCount; ++j) {
-                cout << " " << b[j] << " ";
-                counter++;
-                if (maxItems > 0 && counter == maxItems) {
-                    goto BREAK;
-                }
-            }
+        for(size_t i = 0; i < readTo; i++) {
+            cout << " " << read() << " ";
         }
-        BREAK:
         printf("]\n");
-        free(b);
+        finishRead();
     }
 
     void addAccumuatedIoTime(double t) {
@@ -194,6 +186,7 @@ long BigFile::tempfileCounter = 0;
 BigFile *buildU(BigFile *file, size_t a) {
     BigFile *U = BigFile::getTempFile();
     uint64_t n = file->get_n();
+    printf("Building U from file (block count %lld), taking every %d element", n, a);
     elem_t *m_buf = (elem_t *) malloc(M_BYTES);
     U->startWrite(0);
     for (uint64_t j = 0; j <= n; j += m) {
@@ -210,12 +203,13 @@ BigFile *buildU(BigFile *file, size_t a) {
 
 BigFile **partition(BigFile *file, elem_t *pivots, size_t pivots_count, bool removePivots) {
     size_t block_count = pivots_count + 1;
+    uint64_t N = file->get_N();
+    printf("Partition file (elements %lld) to %d parts", N, block_count);
     BigFile **files = (BigFile **) malloc(block_count * sizeof(BigFile *));
     for (size_t j = 0; j < block_count; j++) {
         files[j] = BigFile::getTempFile();
         files[j]->startWrite(0);
     }
-    uint64_t N = file->get_N();
     file->startRead();
     int *pivotEqualitySwitches = (int *) malloc(pivots_count * sizeof(int));
     memset(pivotEqualitySwitches, 0 , pivots_count * sizeof(int));
@@ -237,6 +231,7 @@ BigFile **partition(BigFile *file, elem_t *pivots, size_t pivots_count, bool rem
             }
         }
     }
+    free(pivotEqualitySwitches);
     file->finishRead();
     for (size_t j = 0; j < block_count; j++) {
         files[j]->finishWrite();
@@ -246,6 +241,7 @@ BigFile **partition(BigFile *file, elem_t *pivots, size_t pivots_count, bool rem
 
 elem_t median_of_medians(BigFile *file) {
     uint64_t n = file->get_n();
+    printf("Find median of medians (file blocks %lld)", n);
     if (n < m) {
         elem_t *m_buf = (elem_t *) malloc(M_BYTES);
         uint64_t read_elems = file->readMore(m_buf, 0, (size_t) n);
@@ -264,8 +260,8 @@ elem_t median_of_medians(BigFile *file) {
             write_file->write(median);
         }
         write_file->finishWrite();
-        elem_t result = median_of_medians(write_file);
         free(read_buf);
+        elem_t result = median_of_medians(write_file);
         file->addAccumuatedIoTime(write_file->getTotalIoTime());
         delete write_file;
         return result;
@@ -281,6 +277,7 @@ elem_t k_seq(BigFile *file, uint64_t k) {
     free(files);
     uint64_t leftN = leftFile->get_N();
     uint64_t rightN = rightFile->get_N();
+    printf("Find k-seq statistic, k=%lld, (left elems %lld) (right elems %lld)", k, leftN, rightN);
     elem_t kth;
     if (k <= leftN) {
         file->addAccumuatedIoTime(rightFile->getTotalIoTime());
@@ -324,6 +321,7 @@ elem_t k_seq(BigFile *file, uint64_t k) {
 }
 
 elem_t *getPivots(BigFile *file, size_t mu) { //returns shit
+    printf("Finding %d pivots", mu);
     elem_t *pivots = (elem_t *) malloc(mu * elemSize);
     size_t a = sqrt(m) / 4;
     if (a == 0) a = 1;
@@ -339,6 +337,7 @@ elem_t *getPivots(BigFile *file, size_t mu) { //returns shit
 }
 
 void merge(BigFile **files, size_t count, BigFile *result) {
+    printf("Merging %d files", count);
     result->startWrite(0);
     for (size_t i = 0; i < count; i++) {
         BigFile *file = files[i];
@@ -354,6 +353,7 @@ void merge(BigFile **files, size_t count, BigFile *result) {
 
 BigFile *distribution_sort(BigFile *file, BigFile *result) {
     uint64_t n = file->get_n();
+    printf("Distribution sort iteration, file blocks %lld", n);
     if (result == NULL) {
         result = BigFile::getTempFile();
     }
@@ -373,6 +373,7 @@ BigFile *distribution_sort(BigFile *file, BigFile *result) {
         if (mu == 0) mu = 1;
         elem_t *pivots = getPivots(file, mu);
         BigFile **files = partition(file, pivots, mu, false);
+        free(pivots);
         for (size_t i = 0; i <= mu; i++) {
             BigFile *temp = distribution_sort(files[i], NULL);
             file->addAccumuatedIoTime(files[i]->getTotalIoTime());
@@ -385,12 +386,12 @@ BigFile *distribution_sort(BigFile *file, BigFile *result) {
             delete files[i];
         }
         free(files);
-        free(pivots);
         return result;
     }
 }
 
 void writeFile(const char *filename, uint64_t length) {
+    double startTime = util::getTime();
     BigFile *file = new BigFile(filename, false);
     file->startWrite(0);
     srand(100500);
@@ -400,50 +401,34 @@ void writeFile(const char *filename, uint64_t length) {
         file->write((elem_t) rand() % length);
     }
     file->finishWrite();
+    double allTime = util::getTime() - startTime;
+    double ioTime = file->getTotalIoTime();
+    double percentIO = ioTime / allTime * 100;
+    printf("Total time:%f, IO: %f (%f%%)\n", allTime, ioTime, percentIO);
     delete file;
 }
 
-void test() {
-    double startTime = util::getTime();
-    BigFile file("input.bin", false);
-    printf("block count:%lld\n", file.get_n());
-    elem_t *b = (elem_t *) malloc(B_BYTES);
-    size_t blockSize = file.readB(b, 2);
-    printf("blocksize:%d, block=[", blockSize);
-    for (size_t i = 0; i < blockSize; i++) {
-        cout << " " << b[i] << " ";
-    }
-    printf("]\n");
-    file.writeB(b, blockSize, 4);
-    free(b);
-    double allTime = util::getTime() - startTime;
-    double ioTime = file.getTotalIoTime();
-    double percentIO = ioTime / allTime * 100;
-    printf("Total time:%f, IO: %f (%f%%)\n", allTime, ioTime, percentIO);
-    file.printFile(0);
-}
-
 void run_sort(const char* inputName, const char* resultName) {
-//    BigFile* file = new BigFile(argv[1], false);
-//    BigFile* result = new BigFile(argv[2], false);
-//    distribution_sort(file, result);
-    BigFile *file = new BigFile("input.bin", false);
-    BigFile *result = new BigFile("result.bin", false);
-
+    BigFile* file = new BigFile(inputName, false);
+    BigFile* result = new BigFile(resultName, false);
     double startTime = util::getTime();
     distribution_sort(file, result);
     double allTime = util::getTime() - startTime;
     result->addAccumuatedIoTime(file->getTotalIoTime());
     double ioTime = result->getTotalIoTime();
     double percentIO = ioTime / allTime * 100;
-    file->printFile(0);
-    result->printFile(0);
+    file->printFile(100);
+    result->printFile(100);
     printf("Total time:%f, IO: %f (%f%%)\n", allTime, ioTime, percentIO);
 }
 
 int main(int argc, char *argv[]) {
-    writeFile("input.bin", 102);
-    run_sort(argv[1], argv[2]);
+    TEMP_PATH = "/media/lg/temp/";
+//    TEMP_PATH = argv[3];
+//    writeFile("/media/lg/input.bin", 1e9);
+//    run_sort(argv[1], argv[2]);
+    run_sort("/media/lg/input.bin", "/media/lg/result.bin");
+//    run_sort("input.bin", "/media/lg/result.bin");
 
     return 0;
 }
