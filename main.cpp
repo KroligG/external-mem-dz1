@@ -7,13 +7,13 @@ using namespace std;
 
 typedef long long elem_t;
 const size_t elemSize = sizeof(elem_t);
-const size_t B = 1000000;
+const size_t B = 10000000;
 const size_t B_BYTES = B * elemSize;
-const size_t M_BYTES = 1 * 1024 * 1024 * 1024; //1GB
+const size_t M_BYTES = 1 * 1024 * 1024 * 512; //1.5GB
 const size_t M = M_BYTES / elemSize;
 const size_t m = M / B;
 const char* TEMP_PATH;
-//const size_t m = 5;
+//const size_t m = 144;
 //const size_t M = m * B;
 //const size_t M_BYTES = M * elemSize;
 
@@ -186,7 +186,7 @@ long BigFile::tempfileCounter = 0;
 BigFile *buildU(BigFile *file, size_t a) {
     BigFile *U = BigFile::getTempFile();
     uint64_t n = file->get_n();
-    printf("Building U from file (block count %lld), taking every %d element", n, a);
+    printf("Building U from file (block count %lld), taking every %d element\n", n, a);
     elem_t *m_buf = (elem_t *) malloc(M_BYTES);
     U->startWrite(0);
     for (uint64_t j = 0; j <= n; j += m) {
@@ -204,7 +204,7 @@ BigFile *buildU(BigFile *file, size_t a) {
 BigFile **partition(BigFile *file, elem_t *pivots, size_t pivots_count, bool removePivots) {
     size_t block_count = pivots_count + 1;
     uint64_t N = file->get_N();
-    printf("Partition file (elements %lld) to %d parts", N, block_count);
+    printf("Partition file (elements %lld) to %d parts\n", N, block_count);
     BigFile **files = (BigFile **) malloc(block_count * sizeof(BigFile *));
     for (size_t j = 0; j < block_count; j++) {
         files[j] = BigFile::getTempFile();
@@ -241,7 +241,7 @@ BigFile **partition(BigFile *file, elem_t *pivots, size_t pivots_count, bool rem
 
 elem_t median_of_medians(BigFile *file) {
     uint64_t n = file->get_n();
-    printf("Find median of medians (file blocks %lld)", n);
+    printf("Find median of medians (file blocks %lld)\n", n);
     if (n < m) {
         elem_t *m_buf = (elem_t *) malloc(M_BYTES);
         uint64_t read_elems = file->readMore(m_buf, 0, (size_t) n);
@@ -277,7 +277,7 @@ elem_t k_seq(BigFile *file, uint64_t k) {
     free(files);
     uint64_t leftN = leftFile->get_N();
     uint64_t rightN = rightFile->get_N();
-    printf("Find k-seq statistic, k=%lld, (left elems %lld) (right elems %lld)", k, leftN, rightN);
+    printf("Find k-seq statistic, k=%lld, (left elems %lld) (right elems %lld)\n", k, leftN, rightN);
     elem_t kth;
     if (k <= leftN) {
         file->addAccumuatedIoTime(rightFile->getTotalIoTime());
@@ -321,9 +321,9 @@ elem_t k_seq(BigFile *file, uint64_t k) {
 }
 
 elem_t *getPivots(BigFile *file, size_t mu) {
-    printf("Finding %d pivots", mu);
+    printf("Finding %d pivots\n", mu);
     elem_t *pivots = (elem_t *) malloc(mu * elemSize);
-    size_t a = sqrt(m) / 4;
+    size_t a = 2 * log2(m);
     if (a == 0) a = 1;
     BigFile *U = buildU(file, a);
     uint64_t N = U->get_N();
@@ -337,7 +337,7 @@ elem_t *getPivots(BigFile *file, size_t mu) {
 }
 
 void merge(BigFile **files, size_t count, BigFile *result) {
-    printf("Merging %d files", count);
+    printf("Merging %d files\n", count);
     result->startWrite(0);
     for (size_t i = 0; i < count; i++) {
         BigFile *file = files[i];
@@ -353,7 +353,7 @@ void merge(BigFile **files, size_t count, BigFile *result) {
 
 BigFile *distribution_sort(BigFile *file, BigFile *result) {
     uint64_t n = file->get_n();
-    printf("Distribution sort iteration, file blocks %lld", n);
+    printf("Distribution sort iteration, file blocks %lld\n", n);
     if (result == NULL) {
         result = BigFile::getTempFile();
     }
@@ -369,7 +369,7 @@ BigFile *distribution_sort(BigFile *file, BigFile *result) {
         free(m_buf);
         return result;
     } else {
-        size_t mu = sqrt(m);
+        size_t mu = m / log2(m);
         if (mu == 0) mu = 1;
         elem_t *pivots = getPivots(file, mu);
         BigFile **files = partition(file, pivots, mu, false);
@@ -423,12 +423,12 @@ void run_sort(const char* inputName, const char* resultName) {
 }
 
 int main(int argc, char *argv[]) {
-//    TEMP_PATH = "/media/lg/temp/";
-    TEMP_PATH = argv[3];
-//    writeFile("/media/lg/input.bin", 1e9);
-    run_sort(argv[1], argv[2]);
-//    run_sort("/media/lg/input.bin", "/media/lg/result.bin");
-//    run_sort("input.bin", "/media/lg/result.bin");
+    TEMP_PATH = "/media/lg/temp/";
+//    TEMP_PATH = argv[3];
+//    writeFile("input.bin", 1e5);
+//    run_sort(argv[1], argv[2]);
+    run_sort("/media/lg/input.bin", "/media/lg/result2.bin");
+//    run_sort("input.bin", "/media/lg/result2.bin");
 
     return 0;
 }
