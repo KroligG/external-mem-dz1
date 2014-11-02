@@ -9,9 +9,11 @@ typedef long long elem_t;
 const size_t elemSize = sizeof(elem_t);
 const size_t B = 10000000;
 const size_t B_BYTES = B * elemSize;
-const size_t M_BYTES = 1 * 1024 * 1024 * 512; //1.5GB
+const size_t M_BYTES = 1 * 1024 * 1024 * 1536; //1.5GB
 const size_t M = M_BYTES / elemSize;
 const size_t m = M / B;
+const size_t PARTITION_COUNT = 16;
+const size_t P = 1000;
 const char* TEMP_PATH;
 //const size_t m = 144;
 //const size_t M = m * B;
@@ -323,9 +325,7 @@ elem_t k_seq(BigFile *file, uint64_t k) {
 elem_t *getPivots(BigFile *file, size_t mu) {
     printf("Finding %d pivots\n", mu);
     elem_t *pivots = (elem_t *) malloc(mu * elemSize);
-    size_t a = 2 * log2(m);
-    if (a == 0) a = 1;
-    BigFile *U = buildU(file, a);
+    BigFile *U = buildU(file, P);
     uint64_t N = U->get_N();
     uint64_t step = N / (mu + 1);
     for (size_t i = 1; i <= mu; i++) {
@@ -369,8 +369,7 @@ BigFile *distribution_sort(BigFile *file, BigFile *result) {
         free(m_buf);
         return result;
     } else {
-        size_t mu = m / log2(m);
-        if (mu == 0) mu = 1;
+        size_t mu = PARTITION_COUNT - 1;
         elem_t *pivots = getPivots(file, mu);
         BigFile **files = partition(file, pivots, mu, false);
         free(pivots);
@@ -404,30 +403,55 @@ void writeFile(const char *filename, uint64_t length) {
     double allTime = util::getTime() - startTime;
     double ioTime = file->getTotalIoTime();
     double percentIO = ioTime / allTime * 100;
-    printf("Total time:%f, IO: %f (%f%%)\n", allTime, ioTime, percentIO);
+    double speed = ((double) (length * elemSize)) / (1024.0 * 1024.0) / (ioTime / 1000.0);
+    printf("Total time:%f, IO: %f (%f%%), speed: %f Mb/s\n", allTime, ioTime, percentIO, speed);
+    delete file;
+}
+
+void testFileReadSpeed(const char *filename) {
+    double startTime = util::getTime();
+    BigFile *file = new BigFile(filename, false);
+    elem_t *m_buf = (elem_t *) malloc(M_BYTES);
+    uint64_t read_elems = file->readMore(m_buf, 0, m);
+    sort(m_buf, m_buf + read_elems);
+    free(m_buf);
+    double allTime = util::getTime() - startTime;
+    double ioTime = file->getTotalIoTime();
+    double percentIO = ioTime / allTime * 100;
+    double speed = ((double) (read_elems * elemSize)) / (1024.0 * 1024.0) / (ioTime / 1000.0);
+    printf("Total time:%f, IO: %f (%f%%), speed: %f Mb/s\n", allTime, ioTime, percentIO, speed);
     delete file;
 }
 
 void run_sort(const char* inputName, const char* resultName) {
     BigFile* file = new BigFile(inputName, false);
     BigFile* result = new BigFile(resultName, false);
+
     double startTime = util::getTime();
+
     distribution_sort(file, result);
+
     double allTime = util::getTime() - startTime;
     result->addAccumuatedIoTime(file->getTotalIoTime());
     double ioTime = result->getTotalIoTime();
     double percentIO = ioTime / allTime * 100;
+
     file->printFile(100);
     result->printFile(100);
     printf("Total time:%f, IO: %f (%f%%)\n", allTime, ioTime, percentIO);
+
+    FILE *result_log = fopen("result_log.txt", "a");
+    fprintf(result_log, "Total time: %f, IO: %f (%f%%), M: %d, B: %d, part: %d, P: %d\n", allTime, ioTime, percentIO, M, B, PARTITION_COUNT, P);
+    fclose(result_log);
 }
 
 int main(int argc, char *argv[]) {
-    TEMP_PATH = "/media/lg/temp/";
-//    TEMP_PATH = argv[3];
-//    writeFile("input.bin", 1e5);
-//    run_sort(argv[1], argv[2]);
-    run_sort("/media/lg/input.bin", "/media/lg/result2.bin");
+//    TEMP_PATH = "/media/lg/temp/";
+    TEMP_PATH = argv[3];
+//    writeFile("/media/lg/input2.bin", 1e8);
+//    testFileReadSpeed("/media/lg/input.bin");
+    run_sort(argv[1], argv[2]);
+//    run_sort("/media/lg/input.bin", "/media/lg/result.bin");
 //    run_sort("input.bin", "/media/lg/result2.bin");
 
     return 0;
